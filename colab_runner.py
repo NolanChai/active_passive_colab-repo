@@ -14,20 +14,44 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
     subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=True)
 
 
+def run_capture(cmd: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+
 def ensure_uv() -> None:
     if shutil.which("uv"):
         return
     run([sys.executable, "-m", "pip", "install", "-q", "uv"])
 
 
+def branch_exists(repo_url: str, branch: str) -> bool:
+    cp = run_capture(["git", "ls-remote", "--heads", repo_url, branch])
+    return cp.returncode == 0 and bool(cp.stdout.strip())
+
+
 def clone_or_update(repo_url: str, branch: str, dest: Path) -> None:
+    branch_available = branch_exists(repo_url, branch)
+
     if not dest.exists():
-        run(["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(dest)])
+        if branch_available:
+            run(["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(dest)])
+        else:
+            print(f"[warn] Branch '{branch}' not found. Cloning default branch instead.")
+            run(["git", "clone", "--depth", "1", repo_url, str(dest)])
         return
 
-    run(["git", "fetch", "origin", branch], cwd=dest)
-    run(["git", "checkout", branch], cwd=dest)
-    run(["git", "pull", "--ff-only", "origin", branch], cwd=dest)
+    run(["git", "fetch", "--all"], cwd=dest)
+    if branch_available:
+        run(["git", "checkout", branch], cwd=dest)
+        run(["git", "pull", "--ff-only", "origin", branch], cwd=dest)
+    else:
+        print(f"[warn] Branch '{branch}' not found. Keeping existing checked-out branch.")
 
 
 def prepare_source(repo_url: str, branch: str, source_dir: Path) -> None:
@@ -36,7 +60,31 @@ def prepare_source(repo_url: str, branch: str, source_dir: Path) -> None:
     run(["uv", "sync"], cwd=source_dir)
 
 
+def require_paths(source_dir: Path, rel_paths: list[str]) -> None:
+    missing = [p for p in rel_paths if not (source_dir / p).exists()]
+    if not missing:
+        return
+    missing_text = "\n".join(f"  - {m}" for m in missing)
+    raise FileNotFoundError(
+        "Source repo is missing required files for this profile:\n"
+        f"{missing_text}\n\n"
+        "Point --source-repo/--source-branch to a branch that includes the analysis scripts."
+    )
+
+
 def run_confirmatory(source_dir: Path) -> None:
+    require_paths(
+        source_dir,
+        [
+            "analysis/02_build_pair_tables.py",
+            "analysis/03_confirmatory_tests.py",
+            "analysis/04_dative_style_controls.py",
+            "analysis/06_genre_topic_models.py",
+            "outputs/cf_word_sentence_uid.csv",
+            "data/en_gum-ud-train.conllu",
+        ],
+    )
+
     run(
         [
             "uv",
@@ -58,6 +106,16 @@ def run_confirmatory(source_dir: Path) -> None:
 
 
 def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: bool) -> None:
+    require_paths(
+        source_dir,
+        [
+            "analysis/01_regenerate_raw_uid.py",
+            "analysis/02_build_pair_tables.py",
+            "analysis/05_signal_spike_harmonic.py",
+            "data/en_gum-ud-train.conllu",
+        ],
+    )
+
     uid_out = "analysis/results/uid_raw_word_sentence.csv" if full else "analysis/results/uid_raw_word_sentence_sample.csv"
     pair_out = "analysis/results/pairwise_changed.csv" if full else "analysis/results/pairwise_changed_raw_sample.csv"
     pair_full = "analysis/results/pairwise_full.csv" if full else "analysis/results/pairwise_full_raw_sample.csv"
@@ -117,6 +175,14 @@ def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: b
 
 
 def run_impulse(source_dir: Path, model: str, limit_docs: int | None, k: int, full: bool) -> None:
+    require_paths(
+        source_dir,
+        [
+            "analysis/07_propagation_impulse.py",
+            "data/en_gum-ud-train.conllu",
+        ],
+    )
+
     raw_out = "analysis/results/uid_post_word_sentence.csv" if full else "analysis/results/uid_post_word_sentence_sample.csv"
     summary_out = (
         "analysis/results/impulse_response_summary.csv"
@@ -162,6 +228,7 @@ def main() -> None:
         "--profile",
         default="confirmatory",
         choices=[
+            "doctor",
             "prepare",
             "confirmatory",
             "raw_signal_sample",
@@ -183,6 +250,26 @@ def main() -> None:
 
     if args.profile == "prepare":
         print("Prepared source repository. No analysis profile run.")
+        return
+    if args.profile == "doctor":
+        print("Environment check:")
+        print(f"  - source_dir: {source_dir}")
+        print(f"  - uv: {shutil.which('uv') is not None}")
+        print("  - key files:")
+        for rel in [
+            "analysis/01_regenerate_raw_uid.py",
+            "analysis/02_build_pair_tables.py",
+            "analysis/03_confirmatory_tests.py",
+            "analysis/04_dative_style_controls.py",
+            "analysis/05_signal_spike_harmonic.py",
+            "analysis/06_genre_topic_models.py",
+            "analysis/07_propagation_impulse.py",
+            "src/uid.py",
+            "run_uid_pipeline.py",
+            "outputs/cf_word_sentence_uid.csv",
+            "data/en_gum-ud-train.conllu",
+        ]:
+            print(f"    {'OK ' if (source_dir / rel).exists() else 'MISS'} {rel}")
         return
 
     if args.profile == "confirmatory":

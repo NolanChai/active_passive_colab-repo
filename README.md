@@ -19,10 +19,18 @@ Small runner repo to execute the passive/active UID analysis pipeline on Google 
 ```python
 !git clone https://github.com/<your-user>/<this-repo>.git
 %cd <this-repo>
+!python colab_runner.py --profile doctor
 !python colab_runner.py --profile confirmatory
 ```
 
 ## Main options
+```bash
+python colab_runner.py \
+  --source-repo https://github.com/NolanChai/active-passive-alternations.git \
+  --source-branch main \
+  --profile doctor
+```
+
 ```bash
 python colab_runner.py \
   --source-repo https://github.com/NolanChai/active-passive-alternations.git \
@@ -46,6 +54,7 @@ python colab_runner.py \
 ```
 
 ## Profiles
+- `doctor`: verify source repo has required analysis files/data
 - `prepare`: clone source repo + `uv sync` only
 - `confirmatory`: run fast confirmatory/model scripts using existing source outputs
 - `raw_signal_sample`: regenerate raw traces on a sample, then signal/spike analysis
@@ -60,3 +69,4 @@ Artifacts are written inside the cloned source repo under:
 ## Notes
 - Colab GPU is used automatically by the source pipeline when available.
 - Full runs can still take hours; start with `raw_signal_sample` and `impulse_sample` first.
+- This runner does **not** vendor analysis scripts itself. Your `--source-repo/--source-branch` must include the analysis files in `analysis/` and pipeline updates in `src/uid.py`.

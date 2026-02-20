@@ -1,4 +1,7 @@
-.PHONY: prepare confirmatory raw-sample impulse-sample full-raw full-impulse
+.PHONY: doctor prepare confirmatory raw-sample impulse-sample full-raw full-impulse
+
+doctor:
+	python colab_runner.py --profile doctor
 
 prepare:
 	python colab_runner.py --profile prepare
