@@ -8,6 +8,8 @@ import sys
 import urllib.request
 from pathlib import Path
 
+ALL_CONTEXTS_ARG = "sentence;prev1;prev3;document;sent[-2,+0];sent[-2,+2];tok[-64,+0];tok[-64,+64]"
+
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
     where = f" (cwd={cwd})" if cwd else ""
@@ -173,7 +175,7 @@ def run_confirmatory(source_dir: Path, model: str, regenerate_uid: bool) -> None
     run([sys.executable, "analysis/06_genre_topic_models.py"], cwd=source_dir)
 
 
-def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: bool) -> None:
+def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: bool, force: bool = False) -> None:
     require_paths(
         source_dir,
         [
@@ -202,10 +204,11 @@ def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: b
         uid_out,
         "--eval_scope",
         "target",
-        "--force",
     ]
     if limit_docs is not None:
         cmd.extend(["--limit_docs", str(limit_docs)])
+    if force:
+        cmd.append("--force")
 
     run(cmd, cwd=source_dir)
 
@@ -236,7 +239,14 @@ def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: b
     )
 
 
-def run_impulse(source_dir: Path, model: str, limit_docs: int | None, k: int, full: bool) -> None:
+def run_impulse(
+    source_dir: Path,
+    model: str,
+    limit_docs: int | None,
+    k: int,
+    full: bool,
+    force: bool = False,
+) -> None:
     require_paths(
         source_dir,
         [
@@ -267,12 +277,84 @@ def run_impulse(source_dir: Path, model: str, limit_docs: int | None, k: int, fu
         raw_out,
         "--summary_output",
         summary_out,
-        "--force",
     ]
     if limit_docs is not None:
         cmd.extend(["--limit_docs", str(limit_docs)])
+    if force:
+        cmd.append("--force")
 
     run(cmd, cwd=source_dir)
+
+
+def run_uid_cache(
+    source_dir: Path,
+    model: str,
+    eval_scope: str,
+    output_name: str,
+    force: bool,
+) -> None:
+    out = source_dir / "outputs" / f"{output_name}.csv"
+    if out.exists() and not force:
+        return
+    cmd = [
+        sys.executable,
+        "run_uid_pipeline.py",
+        "data",
+        model,
+        "--generate_counterfactual",
+        "--uid_level",
+        "sentence",
+        "--uid_unit",
+        "word",
+        "--context",
+        ALL_CONTEXTS_ARG,
+        "--include_raw_surps",
+        "true",
+        "--eval_scope",
+        eval_scope,
+        "--output_dir",
+        "outputs",
+        "--output_name",
+        output_name,
+    ]
+    run(cmd, cwd=source_dir)
+
+
+def run_cache_bundle(source_dir: Path, model: str, include_full_scope: bool, force: bool) -> None:
+    run_uid_cache(
+        source_dir=source_dir,
+        model=model,
+        eval_scope="target",
+        output_name="uid_cache_all_ctx_target_raw",
+        force=force,
+    )
+    run_uid_cache(
+        source_dir=source_dir,
+        model=model,
+        eval_scope="post",
+        output_name="uid_cache_all_ctx_post_raw",
+        force=force,
+    )
+    if include_full_scope:
+        run_uid_cache(
+            source_dir=source_dir,
+            model=model,
+            eval_scope="full",
+            output_name="uid_cache_all_ctx_full_raw",
+            force=force,
+        )
+
+
+def persist_tree(src: Path, dst: Path) -> None:
+    if not src.exists():
+        return
+    for path in src.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(src)
+        out = dst / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, out)
 
 
 def main() -> None:
@@ -296,14 +378,32 @@ def main() -> None:
             "impulse_sample",
             "full_raw_signal",
             "full_impulse",
+            "cache_only",
             "all_sample",
             "all_full",
+            "all_full_cached",
         ],
     )
     parser.add_argument("--model", default="distilgpt2")
     parser.add_argument("--limit-docs", type=int, default=40, help="Used by sample profiles.")
     parser.add_argument("--k", type=int, default=10, help="Offset horizon for impulse profile.")
     parser.add_argument("--skip-install", action="store_true", help="Skip pip install -r requirements.txt")
+    parser.add_argument(
+        "--cache-include-full-scope",
+        action="store_true",
+        help="Cache eval_scope=full UID tables in addition to target and post.",
+    )
+    parser.add_argument(
+        "--force-cache",
+        action="store_true",
+        help="Force regeneration for cache output files.",
+    )
+    parser.add_argument(
+        "--persist-dir",
+        type=str,
+        default=None,
+        help="Optional path (e.g., Google Drive) to copy outputs and analysis/results after run.",
+    )
     parser.add_argument(
         "--regenerate-confirmatory-uid",
         action="store_true",
@@ -359,9 +459,16 @@ def main() -> None:
     elif args.profile == "impulse_sample":
         run_impulse(source_dir, args.model, args.limit_docs, args.k, full=False)
     elif args.profile == "full_raw_signal":
-        run_raw_signal(source_dir, args.model, None, full=True)
+        run_raw_signal(source_dir, args.model, None, full=True, force=args.force_cache)
     elif args.profile == "full_impulse":
-        run_impulse(source_dir, args.model, None, args.k, full=True)
+        run_impulse(source_dir, args.model, None, args.k, full=True, force=args.force_cache)
+    elif args.profile == "cache_only":
+        run_cache_bundle(
+            source_dir=source_dir,
+            model=args.model,
+            include_full_scope=args.cache_include_full_scope,
+            force=args.force_cache,
+        )
     elif args.profile == "all_sample":
         run_confirmatory(
             source_dir,
@@ -376,8 +483,28 @@ def main() -> None:
             model=args.model,
             regenerate_uid=args.regenerate_confirmatory_uid,
         )
-        run_raw_signal(source_dir, args.model, None, full=True)
-        run_impulse(source_dir, args.model, None, args.k, full=True)
+        run_raw_signal(source_dir, args.model, None, full=True, force=args.force_cache)
+        run_impulse(source_dir, args.model, None, args.k, full=True, force=args.force_cache)
+    elif args.profile == "all_full_cached":
+        run_confirmatory(
+            source_dir,
+            model=args.model,
+            regenerate_uid=args.regenerate_confirmatory_uid,
+        )
+        run_raw_signal(source_dir, args.model, None, full=True, force=args.force_cache)
+        run_impulse(source_dir, args.model, None, args.k, full=True, force=args.force_cache)
+        run_cache_bundle(
+            source_dir=source_dir,
+            model=args.model,
+            include_full_scope=args.cache_include_full_scope,
+            force=args.force_cache,
+        )
+
+    if args.persist_dir:
+        persist_root = Path(args.persist_dir)
+        persist_tree(source_dir / "outputs", persist_root / "outputs")
+        persist_tree(source_dir / "analysis" / "results", persist_root / "analysis_results")
+        print(f"Copied outputs to cache path: {persist_root}")
 
     print("Done. See outputs under:")
     print(source_dir / "analysis/results")
