@@ -5,6 +5,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 
@@ -24,10 +25,18 @@ def run_capture(cmd: list[str], cwd: Path | None = None) -> subprocess.Completed
     )
 
 
-def ensure_uv() -> None:
-    if shutil.which("uv"):
+def ensure_pip() -> None:
+    if shutil.which("pip"):
         return
-    run([sys.executable, "-m", "pip", "install", "-q", "uv"])
+    run([sys.executable, "-m", "ensurepip", "--upgrade"])
+
+
+def install_requirements(source_dir: Path) -> None:
+    ensure_pip()
+    req = source_dir / "requirements.txt"
+    if not req.exists():
+        return
+    run([sys.executable, "-m", "pip", "install", "-q", "-r", "requirements.txt"], cwd=source_dir)
 
 
 def branch_exists(repo_url: str, branch: str) -> bool:
@@ -54,10 +63,73 @@ def clone_or_update(repo_url: str, branch: str, dest: Path) -> None:
         print(f"[warn] Branch '{branch}' not found. Keeping existing checked-out branch.")
 
 
-def prepare_source(repo_url: str, branch: str, source_dir: Path) -> None:
-    ensure_uv()
-    clone_or_update(repo_url, branch, source_dir)
-    run(["uv", "sync"], cwd=source_dir)
+def ensure_gum_data(source_dir: Path) -> None:
+    data_dir = source_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    target = data_dir / "en_gum-ud-train.conllu"
+    if target.exists():
+        return
+
+    urls = [
+        "https://raw.githubusercontent.com/UniversalDependencies/UD_English-GUM/master/en_gum-ud-train.conllu",
+        "https://raw.githubusercontent.com/NolanChai/active-passive-alternations/main/data/en_gum-ud-train.conllu",
+    ]
+    for url in urls:
+        try:
+            print(f"Downloading GUM data from: {url}")
+            urllib.request.urlretrieve(url, target)
+            print(f"Saved: {target}")
+            return
+        except Exception as e:
+            print(f"[warn] Failed download: {e}")
+            continue
+    raise RuntimeError("Unable to download en_gum-ud-train.conllu from known sources.")
+
+
+def prepare_source(
+    source_mode: str,
+    repo_url: str,
+    branch: str,
+    source_dir: Path,
+    skip_install: bool = False,
+) -> None:
+    if source_mode == "git":
+        clone_or_update(repo_url, branch, source_dir)
+    if not skip_install:
+        install_requirements(source_dir)
+    ensure_gum_data(source_dir)
+
+
+def ensure_cf_word_uid(source_dir: Path, model: str, force: bool = False) -> None:
+    out = source_dir / "outputs" / "cf_word_sentence_uid.csv"
+    if out.exists() and not force:
+        return
+    (source_dir / "outputs").mkdir(parents=True, exist_ok=True)
+    contexts = "sentence,prev1,prev3,document,sent[-2,+0],sent[-2,+2],tok[-64,+0],tok[-64,+64]"
+    run(
+        [
+            sys.executable,
+            "run_uid_pipeline.py",
+            "data",
+            model,
+            "--generate_counterfactual",
+            "--uid_level",
+            "sentence",
+            "--uid_unit",
+            "word",
+            "--context",
+            contexts,
+            "--output_dir",
+            "outputs",
+            "--output_name",
+            "cf_word_sentence_uid",
+            "--include_raw_surps",
+            "false",
+            "--eval_scope",
+            "target",
+        ],
+        cwd=source_dir,
+    )
 
 
 def require_paths(source_dir: Path, rel_paths: list[str]) -> None:
@@ -72,7 +144,8 @@ def require_paths(source_dir: Path, rel_paths: list[str]) -> None:
     )
 
 
-def run_confirmatory(source_dir: Path) -> None:
+def run_confirmatory(source_dir: Path, model: str, regenerate_uid: bool) -> None:
+    ensure_cf_word_uid(source_dir, model=model, force=regenerate_uid)
     require_paths(
         source_dir,
         [
@@ -87,9 +160,7 @@ def run_confirmatory(source_dir: Path) -> None:
 
     run(
         [
-            "uv",
-            "run",
-            "python",
+            sys.executable,
             "analysis/02_build_pair_tables.py",
             "--uid",
             "outputs/cf_word_sentence_uid.csv",
@@ -100,9 +171,9 @@ def run_confirmatory(source_dir: Path) -> None:
         ],
         cwd=source_dir,
     )
-    run(["uv", "run", "python", "analysis/03_confirmatory_tests.py"], cwd=source_dir)
-    run(["uv", "run", "python", "analysis/04_dative_style_controls.py"], cwd=source_dir)
-    run(["uv", "run", "python", "analysis/06_genre_topic_models.py"], cwd=source_dir)
+    run([sys.executable, "analysis/03_confirmatory_tests.py"], cwd=source_dir)
+    run([sys.executable, "analysis/04_dative_style_controls.py"], cwd=source_dir)
+    run([sys.executable, "analysis/06_genre_topic_models.py"], cwd=source_dir)
 
 
 def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: bool) -> None:
@@ -122,9 +193,7 @@ def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: b
     signal_out = "analysis/results/signal_metrics.csv" if full else "analysis/results/signal_metrics_sample.csv"
 
     cmd = [
-        "uv",
-        "run",
-        "python",
+        sys.executable,
         "analysis/01_regenerate_raw_uid.py",
         "--conllu",
         "data/en_gum-ud-train.conllu",
@@ -145,9 +214,7 @@ def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: b
 
     run(
         [
-            "uv",
-            "run",
-            "python",
+            sys.executable,
             "analysis/02_build_pair_tables.py",
             "--uid",
             uid_out,
@@ -161,9 +228,7 @@ def run_raw_signal(source_dir: Path, model: str, limit_docs: int | None, full: b
 
     run(
         [
-            "uv",
-            "run",
-            "python",
+            sys.executable,
             "analysis/05_signal_spike_harmonic.py",
             "--pairs",
             pair_out,
@@ -191,9 +256,7 @@ def run_impulse(source_dir: Path, model: str, limit_docs: int | None, k: int, fu
     )
 
     cmd = [
-        "uv",
-        "run",
-        "python",
+        sys.executable,
         "analysis/07_propagation_impulse.py",
         "--conllu",
         "data/en_gum-ud-train.conllu",
@@ -217,6 +280,7 @@ def run_impulse(source_dir: Path, model: str, limit_docs: int | None, k: int, fu
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run active-passive UID analyses on Colab.")
+    parser.add_argument("--source-mode", default="local", choices=["local", "git"])
     parser.add_argument(
         "--source-repo",
         default="https://github.com/NolanChai/active-passive-alternations.git",
@@ -240,21 +304,34 @@ def main() -> None:
     parser.add_argument("--model", default="distilgpt2")
     parser.add_argument("--limit-docs", type=int, default=40, help="Used by sample profiles.")
     parser.add_argument("--k", type=int, default=10, help="Offset horizon for impulse profile.")
+    parser.add_argument("--skip-install", action="store_true", help="Skip pip install -r requirements.txt")
+    parser.add_argument(
+        "--regenerate-confirmatory-uid",
+        action="store_true",
+        help="Force regeneration of outputs/cf_word_sentence_uid.csv before confirmatory runs.",
+    )
 
     args = parser.parse_args()
 
     workspace = Path.cwd()
-    source_dir = workspace / args.source_dir
+    source_dir = workspace if args.source_mode == "local" else workspace / args.source_dir
 
-    prepare_source(args.source_repo, args.source_branch, source_dir)
+    prepare_source(
+        args.source_mode,
+        args.source_repo,
+        args.source_branch,
+        source_dir,
+        skip_install=args.skip_install,
+    )
 
     if args.profile == "prepare":
         print("Prepared source repository. No analysis profile run.")
         return
     if args.profile == "doctor":
         print("Environment check:")
+        print(f"  - source_mode: {args.source_mode}")
         print(f"  - source_dir: {source_dir}")
-        print(f"  - uv: {shutil.which('uv') is not None}")
+        print(f"  - python: {sys.executable}")
         print("  - key files:")
         for rel in [
             "analysis/01_regenerate_raw_uid.py",
@@ -273,7 +350,11 @@ def main() -> None:
         return
 
     if args.profile == "confirmatory":
-        run_confirmatory(source_dir)
+        run_confirmatory(
+            source_dir,
+            model=args.model,
+            regenerate_uid=args.regenerate_confirmatory_uid,
+        )
     elif args.profile == "raw_signal_sample":
         run_raw_signal(source_dir, args.model, args.limit_docs, full=False)
     elif args.profile == "impulse_sample":

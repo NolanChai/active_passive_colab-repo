@@ -1,0 +1,82 @@
+from src.utils import *
+from src.uid import run_uid_pipeline
+import argparse
+from pathlib import Path
+import pandas as pd
+import re
+import warnings
+warnings.filterwarnings("ignore")
+
+def main():
+    # Required
+    parser = argparse.ArgumentParser(description='Run Active/Passive switch script and UID calculation scripts on a given UD corpus.')
+    parser.add_argument("data_dir", type=str, help="Path to folder containing .conllu files to process.")
+    parser.add_argument("model",type=str, help="Model to use for surprisal calculations.")
+    # Optional
+    parser.add_argument("--context", "-c", type=str, default=None, help="(Optional) The context level for UID calculation. Choose between sentence, prev1, prev3, document, sent[-2,+0], sent[-2,+2], tok[-64,+0], or tok[-64,+64]. Defaults to all.")
+    parser.add_argument("--generate_counterfactual", "-cf", action="store_true", help="Include to generate counterfactual documents to compare to.")    
+    parser.add_argument("--limit_docs", type=int, default=None, help="(Optional) The number of documents to process.")
+    parser.add_argument("--limit_sents_per_doc", type=int, default=None, help="(Optional) The number of sentences per document to process.")
+    parser.add_argument("--uid_level", type=str, default="sentence", help="(Optional) Linguistic unit for which UID is analyzed. Choose between 'sentence' (default), 'document', or '(-a, +b)', in which a tokens before and b tokens after the target sentence will be analyzed.")
+    parser.add_argument("--uid_unit", type=str, default="token", help="(Optional) Smallest linguistic unit for which surprisal is calculated. Choose between 'token' (default), 'word', or 'sentence'.")
+    parser.add_argument("--device", type=str, default=None, help="(Optional) Override device used.")
+    parser.add_argument("--output_dir", type=str, default=None, help="(Optional) Output directory")
+    parser.add_argument("--output_name", type=str, default="passives_uid_calcs.csv", help="(Optional) Name of output file")
+    parser.add_argument("--include_raw_surps", type=str, default="true", help="(Optional) Include raw surprisal traces (true/false).")
+    parser.add_argument("--eval_scope", type=str, default="target", help="(Optional) For counterfactual docs: target, post, or full.")
+    parser.add_argument("--verbose", action="store_true", help="Set verbosity")
+    
+    args, unk = parser.parse_known_args()
+    
+    # Handle unknown args and save jic
+    extra_args = {}
+    for arg in unk:
+        # edge case handling
+        if '=' in arg:
+            key, value = arg.split('=', 1)
+            # Convert value to appropriate type
+            if value.lower() == 'true':
+                extra_args[key] = True
+            elif value.lower() == 'false':
+                extra_args[key] = False
+            elif value.isdigit():
+                extra_args[key] = int(value)
+            elif re.match(r'^-?\d+\.\d+$', value):
+                extra_args[key] = float(value)
+            else:
+                extra_args[key] = value
+
+    # Paths
+    UD_paths = Path(args.data_dir).iterdir()
+    output_dir = Path(args.output_dir) if args.output_dir else Path("outputs")
+    output_file = Path(args.output_name).with_suffix(".csv")
+    output_filepath = output_dir / output_file
+    output_dir.mkdir(parents=True, exist_ok=True)
+    include_raw_surps = str(args.include_raw_surps).lower() == "true"
+    context_levels = None if args.context is None else [c.strip() for c in args.context.split(",") if c.strip()]
+    
+    
+    uid_dfs = []
+    for UD_path in UD_paths:
+        uid_df = run_uid_pipeline(
+            UD_path,
+            model_name=args.model,
+            limit_docs=args.limit_docs,
+            limit_sents_per_doc=args.limit_sents_per_doc,
+            context_levels=context_levels,
+            generate_counterfactual=args.generate_counterfactual,
+            uid_level=args.uid_level,
+            uid_unit=args.uid_unit,
+            device=args.device,
+            output_dir=output_dir,
+            output_file=output_file,
+            verbose=args.verbose,
+            include_raw_surps=include_raw_surps,
+            eval_scope=args.eval_scope,
+        )
+        uid_dfs.append(uid_df)
+    uid_dfs = pd.concat(uid_dfs)
+    uid_dfs.to_csv(output_filepath)
+    
+if __name__ == "__main__":
+    main()

@@ -1,72 +1,72 @@
-# Colab UID Runner
+# Active/Passive UID Colab Runner
 
-Small runner repo to execute the passive/active UID analysis pipeline on Google Colab.
+This repository is **self-contained** for Google Colab runs.
 
-## What this runs
-- Confirmatory stack (fast):
-  - `analysis/02_build_pair_tables.py`
-  - `analysis/03_confirmatory_tests.py`
-  - `analysis/04_dative_style_controls.py`
-  - `analysis/06_genre_topic_models.py`
-- Raw+signal stack (heavier):
-  - `analysis/01_regenerate_raw_uid.py`
-  - `analysis/02_build_pair_tables.py`
-  - `analysis/05_signal_spike_harmonic.py`
-- Propagation stack (heavier):
-  - `analysis/07_propagation_impulse.py`
+It now includes:
+- `analysis/` scripts (01-08 + shared `common.py`)
+- `src/` pipeline code
+- `run_uid_pipeline.py`
+- `colab_runner.py` orchestration
 
-## Colab quickstart
+No separate source repo clone is required unless you explicitly choose `--source-mode git`.
+
+## Quickstart (Colab)
 ```python
-!git clone https://github.com/<your-user>/<this-repo>.git
-%cd <this-repo>
-!python colab_runner.py --profile doctor
-!python colab_runner.py --profile confirmatory
+%cd /content
+!git clone https://github.com/NolanChai/active_passive_colab-repo.git
+%cd active_passive_colab-repo
 ```
 
-## Main options
-```bash
-python colab_runner.py \
-  --source-repo https://github.com/NolanChai/active-passive-alternations.git \
-  --source-branch main \
-  --profile doctor
+### 1. Doctor check
+```python
+!python colab_runner.py --profile doctor --source-mode local
 ```
 
-```bash
-python colab_runner.py \
-  --source-repo https://github.com/NolanChai/active-passive-alternations.git \
-  --source-branch main \
-  --profile confirmatory
+### 2. Confirmatory run
+If `outputs/cf_word_sentence_uid.csv` is missing, this will auto-generate it first.
+```python
+!python colab_runner.py --profile confirmatory --source-mode local --model distilgpt2
 ```
 
-```bash
-python colab_runner.py \
-  --profile raw_signal_sample \
-  --model distilgpt2 \
-  --limit-docs 40
+### 3. Raw signal sample
+```python
+!python colab_runner.py --profile raw_signal_sample --source-mode local --model distilgpt2 --limit-docs 40
 ```
 
-```bash
-python colab_runner.py \
-  --profile impulse_sample \
-  --model distilgpt2 \
-  --limit-docs 8 \
-  --k 10
+### 4. Impulse sample
+```python
+!python colab_runner.py --profile impulse_sample --source-mode local --model distilgpt2 --limit-docs 8 --k 10
 ```
 
 ## Profiles
-- `doctor`: verify source repo has required analysis files/data
-- `prepare`: clone source repo + `uv sync` only
-- `confirmatory`: run fast confirmatory/model scripts using existing source outputs
-- `raw_signal_sample`: regenerate raw traces on a sample, then signal/spike analysis
-- `impulse_sample`: run propagation/impulse sample
-- `full_raw_signal`: full raw regeneration + pair table + signal metrics
+- `doctor`: verify environment + required files
+- `prepare`: install deps and ensure GUM data exists
+- `confirmatory`: 02/03/04/06
+- `raw_signal_sample`: 01 + 02 + 05 (sample)
+- `impulse_sample`: 07 (sample)
+- `full_raw_signal`: full raw trace regeneration + signal metrics
 - `full_impulse`: full propagation run
 
-## Output location
-Artifacts are written inside the cloned source repo under:
+## Data behavior
+- If `data/en_gum-ud-train.conllu` is missing, `colab_runner.py` auto-downloads it.
+
+## Outputs
+Artifacts are written to:
 - `analysis/results/`
 
-## Notes
-- Colab GPU is used automatically by the source pipeline when available.
-- Full runs can still take hours; start with `raw_signal_sample` and `impulse_sample` first.
-- This runner does **not** vendor analysis scripts itself. Your `--source-repo/--source-branch` must include the analysis files in `analysis/` and pipeline updates in `src/uid.py`.
+## Faster reruns
+After the first successful dependency install, add:
+```bash
+--skip-install
+```
+to profile commands.
+
+## Optional: Git mode
+If you do want to run from another repo:
+```bash
+python colab_runner.py \
+  --source-mode git \
+  --source-repo https://github.com/<user>/<repo>.git \
+  --source-branch <branch> \
+  --profile confirmatory
+```

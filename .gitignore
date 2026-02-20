@@ -3,9 +3,16 @@ __pycache__/
 *.pyo
 *.pyd
 .ipynb_checkpoints/
+.venv/
 
 # cloned source repo
 active-passive-alternations/
 
 # local artifacts
 logs/
+analysis/results/*
+!analysis/results/.gitkeep
+outputs/*
+!outputs/.gitkeep
+data/*.conllu
+!data/.gitkeep

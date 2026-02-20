@@ -1,1 +1,13 @@
-uv>=0.8.0
+conllu>=6.0.0
+deplacy>=2.1.0
+matplotlib>=3.8.0
+numpy>=1.26.0
+pandas>=2.2.0
+pyinflect>=0.5.1
+scipy>=1.11.0
+seaborn>=0.13.0
+stanza>=1.8.0
+statsmodels>=0.14.0
+tabulate>=0.9.0
+tqdm>=4.66.0
+transformers>=4.40.0
