@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# cloned source repo
+active-passive-alternations/
+
+# local artifacts
+logs/
