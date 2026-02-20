@@ -7,13 +7,57 @@ import re
 import warnings
 warnings.filterwarnings("ignore")
 
+def parse_context_arg(raw_context):
+    """Parse context list while preserving commas inside bracketed names.
+
+    Supports:
+    - "all" / "*" -> None (all contexts)
+    - comma-separated list, e.g. "sentence,document,sent[-2,+0]"
+    - semicolon-separated list, e.g. "sentence;document;sent[-2,+0]"
+    """
+    if raw_context is None:
+        return None
+
+    raw = str(raw_context).strip()
+    if raw.lower() in {"all", "*"}:
+        return None
+
+    # easy explicit separator option
+    if ";" in raw:
+        return [c.strip() for c in raw.split(";") if c.strip()]
+
+    parts = []
+    buf = []
+    depth = 0
+    for ch in raw:
+        if ch == "[":
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch == "]":
+            depth = max(depth - 1, 0)
+            buf.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            token = "".join(buf).strip()
+            if token:
+                parts.append(token)
+            buf = []
+            continue
+        buf.append(ch)
+
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts if parts else None
+
 def main():
     # Required
     parser = argparse.ArgumentParser(description='Run Active/Passive switch script and UID calculation scripts on a given UD corpus.')
     parser.add_argument("data_dir", type=str, help="Path to folder containing .conllu files to process.")
     parser.add_argument("model",type=str, help="Model to use for surprisal calculations.")
     # Optional
-    parser.add_argument("--context", "-c", type=str, default=None, help="(Optional) The context level for UID calculation. Choose between sentence, prev1, prev3, document, sent[-2,+0], sent[-2,+2], tok[-64,+0], or tok[-64,+64]. Defaults to all.")
+    parser.add_argument("--context", "-c", type=str, default=None, help="(Optional) The context level for UID calculation. Choose between sentence, prev1, prev3, document, sent[-2,+0], sent[-2,+2], tok[-64,+0], or tok[-64,+64]. Use commas/semicolons between items, or 'all'. Defaults to all.")
     parser.add_argument("--generate_counterfactual", "-cf", action="store_true", help="Include to generate counterfactual documents to compare to.")    
     parser.add_argument("--limit_docs", type=int, default=None, help="(Optional) The number of documents to process.")
     parser.add_argument("--limit_sents_per_doc", type=int, default=None, help="(Optional) The number of sentences per document to process.")
@@ -53,7 +97,7 @@ def main():
     output_filepath = output_dir / output_file
     output_dir.mkdir(parents=True, exist_ok=True)
     include_raw_surps = str(args.include_raw_surps).lower() == "true"
-    context_levels = None if args.context is None else [c.strip() for c in args.context.split(",") if c.strip()]
+    context_levels = parse_context_arg(args.context)
     
     
     uid_dfs = []

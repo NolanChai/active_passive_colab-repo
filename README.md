@@ -22,20 +22,14 @@ No separate source repo clone is required unless you explicitly choose `--source
 !python colab_runner.py --profile doctor --source-mode local
 ```
 
-### 2. Confirmatory run
-If `outputs/cf_word_sentence_uid.csv` is missing, this will auto-generate it first.
+### 2. Run everything (sample sanity)
 ```python
-!python colab_runner.py --profile confirmatory --source-mode local --model distilgpt2
+!python colab_runner.py --profile all_sample --source-mode local --model distilgpt2 --limit-docs 40 --k 10
 ```
 
-### 3. Raw signal sample
+### 3. Run everything (full)
 ```python
-!python colab_runner.py --profile raw_signal_sample --source-mode local --model distilgpt2 --limit-docs 40
-```
-
-### 4. Impulse sample
-```python
-!python colab_runner.py --profile impulse_sample --source-mode local --model distilgpt2 --limit-docs 8 --k 10
+!python colab_runner.py --profile all_full --source-mode local --model gpt2 --k 10
 ```
 
 ## Profiles
@@ -46,6 +40,8 @@ If `outputs/cf_word_sentence_uid.csv` is missing, this will auto-generate it fir
 - `impulse_sample`: 07 (sample)
 - `full_raw_signal`: full raw trace regeneration + signal metrics
 - `full_impulse`: full propagation run
+- `all_sample`: confirmatory + raw_signal_sample + impulse_sample
+- `all_full`: confirmatory + full_raw_signal + full_impulse
 
 ## Data behavior
 - If `data/en_gum-ud-train.conllu` is missing, `colab_runner.py` auto-downloads it.

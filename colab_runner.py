@@ -105,7 +105,6 @@ def ensure_cf_word_uid(source_dir: Path, model: str, force: bool = False) -> Non
     if out.exists() and not force:
         return
     (source_dir / "outputs").mkdir(parents=True, exist_ok=True)
-    contexts = "sentence,prev1,prev3,document,sent[-2,+0],sent[-2,+2],tok[-64,+0],tok[-64,+64]"
     run(
         [
             sys.executable,
@@ -117,8 +116,6 @@ def ensure_cf_word_uid(source_dir: Path, model: str, force: bool = False) -> Non
             "sentence",
             "--uid_unit",
             "word",
-            "--context",
-            contexts,
             "--output_dir",
             "outputs",
             "--output_name",
@@ -299,6 +296,8 @@ def main() -> None:
             "impulse_sample",
             "full_raw_signal",
             "full_impulse",
+            "all_sample",
+            "all_full",
         ],
     )
     parser.add_argument("--model", default="distilgpt2")
@@ -362,6 +361,22 @@ def main() -> None:
     elif args.profile == "full_raw_signal":
         run_raw_signal(source_dir, args.model, None, full=True)
     elif args.profile == "full_impulse":
+        run_impulse(source_dir, args.model, None, args.k, full=True)
+    elif args.profile == "all_sample":
+        run_confirmatory(
+            source_dir,
+            model=args.model,
+            regenerate_uid=args.regenerate_confirmatory_uid,
+        )
+        run_raw_signal(source_dir, args.model, args.limit_docs, full=False)
+        run_impulse(source_dir, args.model, args.limit_docs, args.k, full=False)
+    elif args.profile == "all_full":
+        run_confirmatory(
+            source_dir,
+            model=args.model,
+            regenerate_uid=args.regenerate_confirmatory_uid,
+        )
+        run_raw_signal(source_dir, args.model, None, full=True)
         run_impulse(source_dir, args.model, None, args.k, full=True)
 
     print("Done. See outputs under:")

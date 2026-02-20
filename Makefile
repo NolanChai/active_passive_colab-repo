@@ -1,4 +1,4 @@
-.PHONY: doctor prepare confirmatory raw-sample impulse-sample full-raw full-impulse
+.PHONY: doctor prepare confirmatory raw-sample impulse-sample full-raw full-impulse all-sample all-full
 
 doctor:
 	python colab_runner.py --profile doctor --source-mode local
@@ -20,3 +20,9 @@ full-raw:
 
 full-impulse:
 	python colab_runner.py --profile full_impulse --source-mode local
+
+all-sample:
+	python colab_runner.py --profile all_sample --source-mode local
+
+all-full:
+	python colab_runner.py --profile all_full --source-mode local

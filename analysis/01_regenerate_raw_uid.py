@@ -16,14 +16,42 @@ from analysis.common import ALL_CONTEXTS, ensure_dir
 def parse_contexts(raw: str | None) -> list[str]:
     if not raw:
         return list(ALL_CONTEXTS)
-    return [c.strip() for c in raw.split(",") if c.strip()]
+    txt = str(raw).strip()
+    if txt.lower() in {"all", "*"}:
+        return list(ALL_CONTEXTS)
+    if ";" in txt:
+        return [c.strip() for c in txt.split(";") if c.strip()]
+
+    parts = []
+    buf = []
+    depth = 0
+    for ch in txt:
+        if ch == "[":
+            depth += 1
+            buf.append(ch)
+            continue
+        if ch == "]":
+            depth = max(depth - 1, 0)
+            buf.append(ch)
+            continue
+        if ch == "," and depth == 0:
+            token = "".join(buf).strip()
+            if token:
+                parts.append(token)
+            buf = []
+            continue
+        buf.append(ch)
+    tail = "".join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Regenerate UID outputs with raw surprisal traces.")
     parser.add_argument("--conllu", type=Path, default=Path("data/en_gum-ud-train.conllu"))
     parser.add_argument("--model", type=str, default="gpt2")
-    parser.add_argument("--contexts", type=str, default=",".join(ALL_CONTEXTS))
+    parser.add_argument("--contexts", type=str, default="all")
     parser.add_argument("--uid_level", type=str, default="sentence")
     parser.add_argument("--uid_unit", type=str, default="word")
     parser.add_argument("--device", type=str, default=None)
